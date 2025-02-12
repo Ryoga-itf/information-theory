@@ -10,19 +10,35 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
-    // if (args.len < 2) {
-    //     std.debug.print("Usage: {s} <file>\n", .{args[0]});
-    //     std.posix.exit(1);
-    // }
+    if (args.len != 2) {
+        std.debug.print("Usage: {s} <file>\n", .{args[0]});
+        std.posix.exit(1);
+    }
+
+    const text = readfile: {
+        var file = std.fs.cwd().openFile(args[1], .{}) catch {
+            std.debug.print("Failed to open the file.\n", .{});
+            std.posix.exit(1);
+        };
+        defer file.close();
+
+        const file_size = file.getEndPos() catch {
+            std.debug.print("Failed to read the file.\n", .{});
+            std.posix.exit(1);
+        };
+        var reader = std.io.bufferedReader(file.reader());
+        var stream = reader.reader();
+
+        break :readfile stream.readAllAlloc(allocator, file_size) catch {
+            std.debug.print("Failed to read the file.\n", .{});
+            std.posix.exit(1);
+        };
+    };
+    defer allocator.free(text);
 
     const stdout_file = std.io.getStdOut().writer();
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
-
-    const text =
-        \\In the beginning God created the heavens and the earth. Now the earth was formless and empty, 
-        \\darkness was over the surface of the deep, and the Spirit of God was hovering over the waters.
-    ;
 
     const filter = struct {
         fn f(char: u8) bool {
