@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
 const max_size = std.math.maxInt(u8);
+const char_size = @typeInfo(u8).Int.bits;
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
@@ -19,14 +20,17 @@ pub fn main() !void {
     const stdout = bw.writer();
 
     const text =
-        \\ TODO
+        \\In the beginning God created the heavens and the earth. Now the earth was formless and empty, 
+        \\darkness was over the surface of the deep, and the Spirit of God was hovering over the waters.
     ;
 
-    const result = calculateFrequencies(text, struct {
+    const filter = struct {
         fn f(char: u8) bool {
             return char != '\n' and char != ' ';
         }
-    }.f);
+    }.f;
+
+    const result = calculateFrequencies(text, filter);
 
     try stdout.print("length: {d}\n", .{result.length});
 
@@ -38,15 +42,29 @@ pub fn main() !void {
 
     try stdout.print("entropy: {d}\n", .{calculateEntropy(result.probabilities)});
 
-    var tree = HuffmanTree.init(allocator, result.frequencies);
-    defer tree.deinit();
+    var map = HuffmanCodeMap.init(allocator, result.frequencies, result.probabilities);
+    defer map.deinit();
 
-    try tree.build();
+    try map.build();
 
-    var iter = tree.Iterator();
-    while (iter.next()) |c| {
-        std.debug.print("{c}\n", .{c});
+    for (0..max_size) |char| {
+        if (map.item.get(@intCast(char))) |code| {
+            try stdout.print("| '{c}' | {s} \n", .{ @as(u8, @intCast(char)), code });
+        }
     }
+
+    try stdout.print("Average Huffman code length: {d} bits per character.\n", .{map.averageCodeLength()});
+
+    try stdout.print("Original size: {d} bits\n", .{char_size * result.length});
+    try stdout.print("Compressed size: {d} bits\n", .{size: {
+        var sum: usize = 0;
+        for (0..max_size) |char| {
+            if (map.item.get(@intCast(char))) |code| {
+                sum += code.len * result.frequencies[char];
+            }
+        }
+        break :size sum;
+    }});
 
     try bw.flush();
 }
@@ -92,33 +110,31 @@ fn calculateEntropy(probabilities: [max_size]f128) f128 {
     return entropy;
 }
 
-const HuffmanTree = struct {
-    const Self = @This();
+const HuffmanCodeMap = struct {
+    const Map = @This();
     const Key = u8;
-
-    pub const Node = struct {
-        @"0": ?Key = null,
-        @"1": ?*Node = null,
-    };
 
     arena: ArenaAllocator,
     frequencies: [max_size]usize,
-    root: ?*Node = null,
+    probabilities: [max_size]f128,
+    item: std.AutoHashMap(Key, []u8),
 
-    pub fn init(allocator: Allocator, frequencies: [max_size]usize) Self {
-        return Self{
+    pub fn init(allocator: Allocator, frequencies: [max_size]usize, probabilities: [max_size]f128) Map {
+        return Map{
             .arena = ArenaAllocator.init(allocator),
             .frequencies = frequencies,
-            .root = null,
+            .probabilities = probabilities,
+            .item = std.AutoHashMap(Key, []u8).init(allocator),
         };
     }
 
-    pub fn deinit(tree: Self) void {
-        tree.arena.deinit();
+    pub fn deinit(self: *Map) void {
+        self.item.deinit();
+        self.arena.deinit();
     }
 
-    pub fn build(tree: *Self) !void {
-        const allocator = tree.arena.allocator();
+    pub fn build(self: *Map) !void {
+        const allocator = self.arena.allocator();
         const Item = struct {
             key: Key,
             freq: usize,
@@ -132,12 +148,7 @@ const HuffmanTree = struct {
         var queue = MaxHeap.init(allocator, {});
         defer queue.deinit();
 
-        tree.root = try allocator.create(Node);
-        var current = tree.root.?;
-        current.@"0" = null;
-        current.@"1" = null;
-
-        for (tree.frequencies, 0..) |freq, char| {
+        for (self.frequencies, 0..) |freq, char| {
             if (freq > 0) {
                 try queue.add(Item{
                     .key = @intCast(char),
@@ -146,28 +157,34 @@ const HuffmanTree = struct {
             }
         }
 
+        var length: usize = 1;
+        var code = try allocator.alloc(u8, length);
+
         while (queue.removeOrNull()) |top| {
-            current.@"0" = top.key;
-            current.@"1" = try allocator.create(Node);
-            current = current.@"1".?;
+            switch (queue.count()) {
+                0 => {
+                    try self.item.put(top.key, code);
+                },
+                else => {
+                    code[length - 1] = '0';
+                    try self.item.put(top.key, code);
+                    if (queue.count() > 1) {
+                        length += 1;
+                    }
+                    code = try allocator.alloc(u8, length);
+                    @memset(code, '1');
+                },
+            }
         }
     }
 
-    pub fn Iterator(tree: *Self) struct {
-        const Iter = @This();
-        current: ?*Node = null,
-
-        fn next(self: *Iter) ?u8 {
-            if (self.current) |cur| {
-                defer self.current = cur.@"1";
-                return cur.@"0";
-            } else {
-                return null;
+    pub fn averageCodeLength(self: Map) f128 {
+        var average: f128 = 0;
+        for (0..max_size) |char| {
+            if (self.item.get(@intCast(char))) |code| {
+                average += @as(f128, @floatFromInt(code.len)) * self.probabilities[char];
             }
         }
-    } {
-        return .{
-            .current = tree.root,
-        };
+        return average;
     }
 };
