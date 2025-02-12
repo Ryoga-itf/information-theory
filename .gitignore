@@ -9,3 +9,5 @@ zig-out/
 
 # Report
 *.pdf
+*.txt
+!*.example.txt
