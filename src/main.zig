@@ -48,15 +48,21 @@ pub fn main() !void {
 
     const result = calculateFrequencies(text, filter);
 
-    try stdout.print("length: {d}\n", .{result.length});
+    try stdout.print("Length: {d}\n\n", .{result.length});
 
+    try stdout.print("{s}\n", .{"=" ** 55});
+    try stdout.print("Probabilities:\n", .{});
     for (result.frequencies, result.probabilities, 0..) |freq, prob, char| {
         if (freq > 0) {
             try stdout.print("| '{c}' | {d: >6} | {d}\n", .{ @as(u8, @intCast(char)), freq, prob });
         }
     }
+    try stdout.print("{s}\n\n", .{"=" ** 55});
 
-    try stdout.print("entropy: {d}\n", .{calculateEntropy(result.probabilities)});
+    try stdout.print("Entropy of the text: {d}\n\n", .{calculateEntropy(result.probabilities)});
+
+    try stdout.print("{s}\n", .{"=" ** 20});
+    try stdout.print("Huffman Codes:\n", .{});
 
     var tree = HuffmanTree.init(allocator, result.frequencies, result.probabilities);
     defer tree.deinit();
@@ -71,6 +77,7 @@ pub fn main() !void {
             try stdout.print("| '{c}' | {s} \n", .{ @as(u8, @intCast(char)), c });
         }
     }
+    try stdout.print("{s}\n\n", .{"=" ** 20});
 
     try stdout.print("Average Huffman code length: {d} bits per character.\n", .{code.averageCodeLength(result.probabilities)});
 
