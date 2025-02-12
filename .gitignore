@@ -11,3 +11,4 @@ zig-out/
 *.pdf
 *.txt
 !*.example.txt
+.env
