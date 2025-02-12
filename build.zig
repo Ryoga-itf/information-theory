@@ -63,4 +63,26 @@ pub fn build(b: *std.Build) void {
     // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
+
+    const report_step = b.step("report", "Compile report");
+    const report = buildReportStep(b);
+    report_step.dependOn(report);
+}
+
+fn buildReportStep(b: *std.Build) *std.Build.Step {
+    const s = b.allocator.create(std.Build.Step) catch unreachable;
+    s.* = std.Build.Step.init(.{
+        .id = .custom,
+        .name = "BuildReportStep",
+        .owner = b,
+        .makeFn = struct {
+            fn make(_: *std.Build.Step, _: std.Progress.Node) anyerror!void {
+                const argv = [_][]const u8{ "typst", "compile", "report/report.typ" };
+                var child = std.process.Child.init(&argv, std.heap.page_allocator);
+                try child.spawn();
+                _ = try child.wait();
+            }
+        }.make,
+    });
+    return s;
 }
