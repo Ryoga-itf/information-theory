@@ -42,29 +42,34 @@ pub fn main() !void {
 
     try stdout.print("entropy: {d}\n", .{calculateEntropy(result.probabilities)});
 
-    var map = HuffmanCodeMap.init(allocator, result.frequencies, result.probabilities);
-    defer map.deinit();
+    var tree = HuffmanTree.init(allocator, result.frequencies, result.probabilities);
+    defer tree.deinit();
 
-    try map.build();
+    try tree.build();
 
-    for (0..max_size) |char| {
-        if (map.item.get(@intCast(char))) |code| {
-            try stdout.print("| '{c}' | {s} \n", .{ @as(u8, @intCast(char)), code });
-        }
-    }
+    // var map = HuffmanCodeMap.init(allocator, result.frequencies, result.probabilities);
+    // defer map.deinit();
+    //
+    // try map.build();
+    //
+    // for (0..max_size) |char| {
+    //     if (map.item.get(@intCast(char))) |code| {
+    //         try stdout.print("| '{c}' | {s} \n", .{ @as(u8, @intCast(char)), code });
+    //     }
+    // }
 
-    try stdout.print("Average Huffman code length: {d} bits per character.\n", .{map.averageCodeLength()});
-
-    try stdout.print("Original size: {d} bits\n", .{char_size * result.length});
-    try stdout.print("Compressed size: {d} bits\n", .{size: {
-        var sum: usize = 0;
-        for (0..max_size) |char| {
-            if (map.item.get(@intCast(char))) |code| {
-                sum += code.len * result.frequencies[char];
-            }
-        }
-        break :size sum;
-    }});
+    // try stdout.print("Average Huffman code length: {d} bits per character.\n", .{map.averageCodeLength()});
+    //
+    // try stdout.print("Original size: {d} bits\n", .{char_size * result.length});
+    // try stdout.print("Compressed size: {d} bits\n", .{size: {
+    //     var sum: usize = 0;
+    //     for (0..max_size) |char| {
+    //         if (map.item.get(@intCast(char))) |code| {
+    //             sum += code.len * result.frequencies[char];
+    //         }
+    //     }
+    //     break :size sum;
+    // }});
 
     try bw.flush();
 }
@@ -109,6 +114,70 @@ fn calculateEntropy(probabilities: [max_size]f128) f128 {
     }
     return entropy;
 }
+
+const HuffmanTree = struct {
+    const Tree = @This();
+    const Key = u8;
+
+    pub const Node = struct {
+        char: ?u8 = null,
+        freq: usize,
+        @"0": ?*Node = null,
+        @"1": ?*Node = null,
+    };
+
+    arena: ArenaAllocator,
+    frequencies: [max_size]usize,
+    probabilities: [max_size]f128,
+    root: ?*Node = null,
+
+    pub fn init(allocator: Allocator, frequencies: [max_size]usize, probabilities: [max_size]f128) Tree {
+        return Tree{
+            .arena = ArenaAllocator.init(allocator),
+            .frequencies = frequencies,
+            .probabilities = probabilities,
+        };
+    }
+
+    pub fn deinit(tree: *Tree) void {
+        tree.arena.deinit();
+    }
+
+    pub fn build(tree: *Tree) !void {
+        const allocator = tree.arena.allocator();
+        const MinHeap = std.PriorityQueue(*Node, void, struct {
+            fn lessThan(_: void, a: *Node, b: *Node) std.math.Order {
+                return std.math.order(a.freq, b.freq);
+            }
+        }.lessThan);
+        var queue = MinHeap.init(allocator, {});
+        defer queue.deinit();
+
+        for (tree.frequencies, 0..) |freq, char| {
+            if (freq > 0) {
+                var node = try allocator.create(Node);
+                node.char = @intCast(char);
+                node.freq = freq;
+                try queue.add(node);
+            }
+        }
+
+        while (queue.count() > 1) {
+            const @"0" = queue.remove();
+            const @"1" = queue.remove();
+
+            var merged = try allocator.create(Node);
+            merged.@"0" = @"0";
+            merged.@"1" = @"1";
+
+            try queue.add(merged);
+        }
+
+        if (queue.removeOrNull()) |root| {
+            tree.root = root;
+        }
+    }
+};
 
 const HuffmanCodeMap = struct {
     const Map = @This();
