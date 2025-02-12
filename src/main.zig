@@ -4,6 +4,8 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 
 const max_size = std.math.maxInt(u8);
 const char_size = @typeInfo(u8).Int.bits;
+const FloatType = f128;
+const float_print_width: usize = @intFromFloat(@as(f64, @floatFromInt(@typeInfo(FloatType).Float.bits)) * @log10(2.0));
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
@@ -50,20 +52,19 @@ pub fn main() !void {
 
     try stdout.print("Length: {d}\n\n", .{result.length});
 
-    try stdout.print("{s}\n", .{"=" ** 55});
     try stdout.print("Probabilities:\n", .{});
+    try stdout.print("{s}\n", .{"=" ** (float_print_width + 18)});
     for (result.frequencies, result.probabilities, 0..) |freq, prob, char| {
         if (freq > 0) {
             try stdout.print("| '{c}' | {d: >6} | {d}\n", .{ @as(u8, @intCast(char)), freq, prob });
         }
     }
-    try stdout.print("{s}\n\n", .{"=" ** 55});
+    try stdout.print("{s}\n\n", .{"=" ** (float_print_width + 18)});
 
     try stdout.print("Entropy of the text: {d}\n\n", .{calculateEntropy(result.probabilities)});
 
-    try stdout.print("{s}\n", .{"=" ** 20});
     try stdout.print("Huffman Codes:\n", .{});
-
+    try stdout.print("{s}\n", .{"=" ** 20});
     var tree = HuffmanTree.init(allocator, result.frequencies, result.probabilities);
     defer tree.deinit();
 
@@ -98,11 +99,11 @@ pub fn main() !void {
 /// Calculate character frequencies and probabilities
 fn calculateFrequencies(text: []const u8, filter: fn (u8) bool) struct {
     frequencies: [max_size]usize,
-    probabilities: [max_size]f128,
+    probabilities: [max_size]FloatType,
     length: usize,
 } {
     var frequencies = [_]usize{0} ** max_size;
-    var probabilities = [_]f128{0} ** max_size;
+    var probabilities = [_]FloatType{0} ** max_size;
     var length: usize = 0;
 
     for (text) |char| {
@@ -114,7 +115,7 @@ fn calculateFrequencies(text: []const u8, filter: fn (u8) bool) struct {
 
     for (frequencies, 0..) |freq, char| {
         if (freq > 0) {
-            probabilities[char] = @as(f128, @floatFromInt(freq)) / @as(f128, @floatFromInt(length));
+            probabilities[char] = @as(FloatType, @floatFromInt(freq)) / @as(FloatType, @floatFromInt(length));
         }
     }
 
@@ -126,8 +127,8 @@ fn calculateFrequencies(text: []const u8, filter: fn (u8) bool) struct {
 }
 
 /// Calculate entropy
-fn calculateEntropy(probabilities: [max_size]f128) f128 {
-    var entropy: f128 = 0;
+fn calculateEntropy(probabilities: [max_size]FloatType) FloatType {
+    var entropy: FloatType = 0;
     for (probabilities) |prob| {
         if (prob > 0) {
             entropy += -prob * @log2(prob);
@@ -149,10 +150,10 @@ const HuffmanTree = struct {
 
     arena: ArenaAllocator,
     frequencies: [max_size]usize,
-    probabilities: [max_size]f128,
+    probabilities: [max_size]FloatType,
     root: ?*Node = null,
 
-    pub fn init(allocator: Allocator, frequencies: [max_size]usize, probabilities: [max_size]f128) Tree {
+    pub fn init(allocator: Allocator, frequencies: [max_size]usize, probabilities: [max_size]FloatType) Tree {
         return Tree{
             .arena = ArenaAllocator.init(allocator),
             .frequencies = frequencies,
@@ -220,11 +221,11 @@ const HuffmanTree = struct {
             self.arena.deinit();
         }
 
-        pub fn averageCodeLength(self: *Self, probabilities: [max_size]f128) f128 {
-            var average: f128 = 0;
+        pub fn averageCodeLength(self: *Self, probabilities: [max_size]FloatType) FloatType {
+            var average: FloatType = 0;
             for (0..max_size) |char| {
                 if (self.map.get(@intCast(char))) |code| {
-                    average += @as(f128, @floatFromInt(code.len)) * probabilities[char];
+                    average += @as(FloatType, @floatFromInt(code.len)) * probabilities[char];
                 }
             }
             return average;
