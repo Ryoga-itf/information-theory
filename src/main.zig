@@ -47,29 +47,27 @@ pub fn main() !void {
 
     try tree.build();
 
-    // var map = HuffmanCodeMap.init(allocator, result.frequencies, result.probabilities);
-    // defer map.deinit();
-    //
-    // try map.build();
-    //
-    // for (0..max_size) |char| {
-    //     if (map.item.get(@intCast(char))) |code| {
-    //         try stdout.print("| '{c}' | {s} \n", .{ @as(u8, @intCast(char)), code });
-    //     }
-    // }
+    var code = try tree.generateCode(allocator);
+    defer code.deinit();
 
-    // try stdout.print("Average Huffman code length: {d} bits per character.\n", .{map.averageCodeLength()});
-    //
-    // try stdout.print("Original size: {d} bits\n", .{char_size * result.length});
-    // try stdout.print("Compressed size: {d} bits\n", .{size: {
-    //     var sum: usize = 0;
-    //     for (0..max_size) |char| {
-    //         if (map.item.get(@intCast(char))) |code| {
-    //             sum += code.len * result.frequencies[char];
-    //         }
-    //     }
-    //     break :size sum;
-    // }});
+    for (0..max_size) |char| {
+        if (code.map.get(@intCast(char))) |c| {
+            try stdout.print("| '{c}' | {s} \n", .{ @as(u8, @intCast(char)), c });
+        }
+    }
+
+    try stdout.print("Average Huffman code length: {d} bits per character.\n", .{code.averageCodeLength(result.probabilities)});
+
+    try stdout.print("Original size: {d} bits\n", .{char_size * result.length});
+    try stdout.print("Compressed size: {d} bits\n", .{size: {
+        var sum: usize = 0;
+        for (0..max_size) |char| {
+            if (code.map.get(@intCast(char))) |c| {
+                sum += c.len * result.frequencies[char];
+            }
+        }
+        break :size sum;
+    }});
 
     try bw.flush();
 }
@@ -167,6 +165,8 @@ const HuffmanTree = struct {
             const @"1" = queue.remove();
 
             var merged = try allocator.create(Node);
+            merged.char = null;
+            merged.freq = @"0".freq + @"1".freq;
             merged.@"0" = @"0";
             merged.@"1" = @"1";
 
@@ -177,83 +177,65 @@ const HuffmanTree = struct {
             tree.root = root;
         }
     }
-};
 
-const HuffmanCodeMap = struct {
-    const Map = @This();
-    const Key = u8;
+    pub const Code = struct {
+        const Self = @This();
+        const Map = std.AutoHashMap(Key, []u8);
 
-    arena: ArenaAllocator,
-    frequencies: [max_size]usize,
-    probabilities: [max_size]f128,
-    item: std.AutoHashMap(Key, []u8),
+        arena: ArenaAllocator,
+        map: Map,
 
-    pub fn init(allocator: Allocator, frequencies: [max_size]usize, probabilities: [max_size]f128) Map {
-        return Map{
-            .arena = ArenaAllocator.init(allocator),
-            .frequencies = frequencies,
-            .probabilities = probabilities,
-            .item = std.AutoHashMap(Key, []u8).init(allocator),
-        };
-    }
-
-    pub fn deinit(self: *Map) void {
-        self.item.deinit();
-        self.arena.deinit();
-    }
-
-    pub fn build(self: *Map) !void {
-        const allocator = self.arena.allocator();
-        const Item = struct {
-            key: Key,
-            freq: usize,
-        };
-        const MaxHeap = std.PriorityQueue(Item, void, struct {
-            fn greaterThan(_: void, a: Item, b: Item) std.math.Order {
-                return std.math.order(a.freq, b.freq).invert();
-            }
-        }.greaterThan);
-
-        var queue = MaxHeap.init(allocator, {});
-        defer queue.deinit();
-
-        for (self.frequencies, 0..) |freq, char| {
-            if (freq > 0) {
-                try queue.add(Item{
-                    .key = @intCast(char),
-                    .freq = freq,
-                });
-            }
+        pub fn init(allocator: Allocator) Self {
+            return Self{
+                .arena = ArenaAllocator.init(allocator),
+                .map = Map.init(allocator),
+            };
         }
 
-        var length: usize = 1;
-        var code = try allocator.alloc(u8, length);
-
-        while (queue.removeOrNull()) |top| {
-            switch (queue.count()) {
-                0 => {
-                    try self.item.put(top.key, code);
-                },
-                else => {
-                    code[length - 1] = '0';
-                    try self.item.put(top.key, code);
-                    if (queue.count() > 1) {
-                        length += 1;
-                    }
-                    code = try allocator.alloc(u8, length);
-                    @memset(code, '1');
-                },
-            }
+        pub fn deinit(self: *Self) void {
+            self.map.deinit();
+            self.arena.deinit();
         }
+
+        pub fn averageCodeLength(self: *Self, probabilities: [max_size]f128) f128 {
+            var average: f128 = 0;
+            for (0..max_size) |char| {
+                if (self.map.get(@intCast(char))) |code| {
+                    average += @as(f128, @floatFromInt(code.len)) * probabilities[char];
+                }
+            }
+            return average;
+        }
+    };
+
+    pub fn generateCode(tree: Tree, allocator: Allocator) !Code {
+        var code = Code.init(allocator);
+        errdefer code.deinit();
+
+        if (tree.root) |root| {
+            var list = std.ArrayList(u8).init(allocator);
+            defer list.deinit();
+            try generateCodeRec(&code, root, &list);
+        }
+
+        return code;
     }
 
-    pub fn averageCodeLength(self: Map) f128 {
-        var average: f128 = 0;
-        for (0..max_size) |char| {
-            if (self.item.get(@intCast(char))) |code| {
-                average += @as(f128, @floatFromInt(code.len)) * self.probabilities[char];
-            }
+    fn generateCodeRec(code: *Code, current: *Node, list: *std.ArrayList(u8)) !void {
+        const allocator = code.arena.allocator();
+        if (current.char) |char| {
+            try code.map.put(char, try allocator.dupe(u8, list.items));
+            return;
         }
-        return average;
+        if (current.@"0") |@"0"| {
+            try list.append('0');
+            try generateCodeRec(code, @"0", list);
+            _ = list.pop();
+        }
+        if (current.@"1") |@"1"| {
+            try list.append('1');
+            try generateCodeRec(code, @"1", list);
+            _ = list.pop();
+        }
     }
 };
