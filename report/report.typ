@@ -1,16 +1,5 @@
 #import "@preview/tenv:0.1.1": parse_dotenv
-#import "@preview/codelst:2.0.2": sourcecode, sourcefile
 
-#import "@preview/showybox:2.0.1":*
-#let blockquote(body) = showybox(
-  frame: (
-    thickness: (left: 1pt),
-    radius: 0pt
-    ),
-  par(text(size: 0pt, ""))
-  + v(-1em-2.926pt)
-  + body
-  )
 
 #let env = parse_dotenv(read(".env"))
 
@@ -60,6 +49,6 @@
 // Main body.
 #set par(justify: true)
 
-== 1: 1月31日分課題
-== 2: 二元対象通信路問題
-== 3: 情報理論の授業内容について
+#include "1.typ"
+#include "2.typ"
+#include "3.typ"
