@@ -77,7 +77,7 @@ fn buildReportStep(b: *std.Build) *std.Build.Step {
         .owner = b,
         .makeFn = struct {
             fn make(_: *std.Build.Step, _: std.Progress.Node) anyerror!void {
-                const argv = [_][]const u8{ "typst", "compile", "report/report.typ" };
+                const argv = [_][]const u8{ "typst", "compile", "report/report.typ", "--root", "." };
                 var child = std.process.Child.init(&argv, std.heap.page_allocator);
                 try child.spawn();
                 _ = try child.wait();
