@@ -42,11 +42,7 @@ pub fn main() !void {
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
 
-    const filter = struct {
-        fn f(char: u8) bool {
-            return char != '\n' and char != ' ';
-        }
-    }.f;
+    const filter = std.ascii.isAlphanumeric;
 
     const result = calculateFrequencies(text, filter);
 
